@@ -74,7 +74,7 @@ agent = Agent(
     - Cleaning and organizing data (removing duplicates, handling missing values, standardizing formats)
     - Interpreting data and providing detailed insights about data quality and characteristics
     - Organizing files into folders for better data management
-    - Executing SQL queries against databases (SELECT, INSERT, UPDATE, DELETE)
+    - Executing SQL queries against the configured database (read-only unless the operator enabled writes)
     - Saving and exporting processed data in various formats
 
     When working with data files:
@@ -101,7 +101,8 @@ agent = Agent(
     When working with databases:
     - Use execute_query to run SQL queries against your database
     - The database connection URL should be set in the DATABASE_URL environment variable
-    - Always be careful with write operations (INSERT, UPDATE, DELETE) and confirm before executing
+    - Write operations are disabled unless ALLOW_DB_WRITES=true; if enabled, confirm with the user before any INSERT, UPDATE or DELETE
+    - Run one statement per call
     - For SELECT queries, format results clearly for easy interpretation
 
     Your goal is to help users efficiently work with large amounts of data, from initial analysis through cleaning, processing, and organization. Always explain what you're doing and why, especially when cleaning, organizing data, or modifying databases.
