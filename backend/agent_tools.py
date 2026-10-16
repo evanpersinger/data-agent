@@ -1,6 +1,7 @@
 # agent_tools.py
 # Functions/tools that the agent can use
 
+import io
 import pandas as pd
 from pathlib import Path
 import os
@@ -64,6 +65,17 @@ def _safe_output_path(directory: Path, name: str) -> Path:
     if not name or name != Path(name).name or name in (".", ".."):
         raise ValueError(f"Invalid output filename '{name}': use a plain file name, no folders.")
     return directory / name
+
+
+def _dataset_summary(df: pd.DataFrame) -> str:
+    """Shape, column names/dtypes and the first rows, so the agent knows what to plot or clean."""
+    summary = "### Dataset Overview\n"
+    summary += f"- **Total Rows:** {df.shape[0]:,}\n"
+    summary += f"- **Total Columns:** {df.shape[1]}\n\n"
+    summary += "### Columns\n"
+    summary += "\n".join(f"- {col} ({dtype})" for col, dtype in df.dtypes.items())
+    summary += "\n\n### First 5 rows\n" + df.head().to_string(index=False)
+    return summary
 
 
 # list files in data directories
@@ -134,10 +146,7 @@ def read_csv(filename: str) -> str:
         return str(e)
     try:
         df = pd.read_csv(file_path)
-        summary = f"### Dataset Overview\n"
-        summary += f"- **Total Rows:** {df.shape[0]:,}\n"
-        summary += f"- **Total Columns:** {df.shape[1]}"
-        return summary
+        return _dataset_summary(df)
     except Exception as e:
         return f"Could not read CSV {file_path}: {e}"
 
@@ -155,10 +164,7 @@ def read_excel(filename: str, sheet_name: str = None) -> str:
             df = pd.read_excel(file_path, sheet_name=sheet_name)
         else:
             df = pd.read_excel(file_path)
-        summary = f"### Dataset Overview\n"
-        summary += f"- **Total Rows:** {df.shape[0]:,}\n"
-        summary += f"- **Total Columns:** {df.shape[1]}"
-        return summary
+        return _dataset_summary(df)
     except Exception as e:
         return f"Could not read Excel {file_path}: {e}"
 
@@ -182,7 +188,9 @@ def analyze_dataset(filename: str) -> str:
         summary = f"Analysis of {filename}:\n\n"
         summary += f"Dataset shape: {df.shape[0]} rows × {df.shape[1]} columns\n\n"
         summary += "Column info:\n"
-        summary += str(df.info())
+        buf = io.StringIO()
+        df.info(buf=buf)
+        summary += buf.getvalue()
         summary += "\n\nBasic statistics:\n"
         summary += df.describe().to_string()
         summary += "\n\nMissing values:\n"
@@ -216,6 +224,9 @@ def clean_dataset(filename: str, remove_duplicates: bool = True, fill_missing: s
         else:
             return f"Unsupported file type. Use CSV or Excel files."
         
+        if fill_missing not in ("drop", "fill", "zero"):
+            return f"Invalid fill_missing '{fill_missing}'. Use 'drop', 'fill' or 'zero'."
+
         original_shape = df.shape
         changes = []
         
@@ -237,7 +248,7 @@ def clean_dataset(filename: str, remove_duplicates: bool = True, fill_missing: s
         elif fill_missing == "fill":
             numeric_cols = df.select_dtypes(include=['number']).columns
             for col in numeric_cols:
-                df[col].fillna(df[col].median(), inplace=True)
+                df[col] = df[col].fillna(df[col].median())
             changes.append("Filled missing numeric values with median")
         elif fill_missing == "zero":
             df = df.fillna(0)
@@ -325,6 +336,9 @@ def interpret_data(filename: str) -> str:
         else:
             return f"Unsupported file type. Use CSV or Excel files."
         
+        if df.empty:
+            return f"{filename} has no rows or no columns, nothing to interpret."
+
         interpretation = f"Data Interpretation for {filename}:\n\n"
         
         # Basic info
@@ -817,7 +831,7 @@ def download_kaggle_dataset(dataset: str, unzip: bool = True) -> str:
                             if ds.ref == dataset:
                                 dataset_size_bytes = getattr(ds, 'total_bytes', None)
                                 break
-                except:
+                except Exception:
                     pass  # If we can't get size, continue with download but check after
         
         # Check size before downloading (if we have size info)
@@ -903,9 +917,6 @@ def download_kaggle_dataset(dataset: str, unzip: bool = True) -> str:
         
     except Exception as e:
         error_msg = str(e)
-        # Print full error for debugging (can remove later)
-        print(f"DEBUG: Full error: {error_msg}", flush=True)
-        
         if "401" in error_msg or "Unauthorized" in error_msg:
             return f"Error: Kaggle authentication failed. Please set up your Kaggle API credentials using one of these methods:\n\n" \
                    f"Method 1 (Environment Variables - Recommended):\n" \
@@ -1021,22 +1032,22 @@ def plot_data(
 
         if chart_type == "bar":
             if y_column is None:
+                plt.close(fig)
                 return "Bar chart requires a y_column."
-            # If x is categorical with many values, aggregate
-            if df[x_column].nunique() > 30:
-                plot_df = df.groupby(x_column)[y_column].mean().head(20)
-                ax.bar(plot_df.index.astype(str), plot_df.values)
-                ax.set_xlabel(x_column)
-                ax.set_ylabel(f"{y_column} (mean)")
-            else:
-                plot_df = df.groupby(x_column)[y_column].mean()
-                ax.bar(plot_df.index.astype(str), plot_df.values)
-                ax.set_xlabel(x_column)
-                ax.set_ylabel(f"{y_column} (mean)")
+            if not pd.api.types.is_numeric_dtype(df[y_column]):
+                plt.close(fig)
+                return f"Bar chart requires a numeric y_column. '{y_column}' is not numeric."
+            plot_df = df.groupby(x_column)[y_column].mean()
+            if len(plot_df) > 30:
+                plot_df = plot_df.head(20)  # keep the chart readable
+            ax.bar(plot_df.index.astype(str), plot_df.values)
+            ax.set_xlabel(x_column)
+            ax.set_ylabel(f"{y_column} (mean)")
             plt.xticks(rotation=45, ha="right")
 
         elif chart_type == "line":
             if y_column is None:
+                plt.close(fig)
                 return "Line chart requires a y_column."
             ax.plot(df[x_column], df[y_column], marker="o", linewidth=1, markersize=3)
             ax.set_xlabel(x_column)
@@ -1044,6 +1055,7 @@ def plot_data(
 
         elif chart_type == "scatter":
             if y_column is None:
+                plt.close(fig)
                 return "Scatter chart requires a y_column."
             ax.scatter(df[x_column], df[y_column], alpha=0.5, s=20)
             ax.set_xlabel(x_column)
@@ -1051,6 +1063,7 @@ def plot_data(
 
         elif chart_type == "histogram":
             if not pd.api.types.is_numeric_dtype(df[x_column]):
+                plt.close(fig)
                 return f"Histogram requires a numeric column. '{x_column}' is not numeric."
             ax.hist(df[x_column].dropna(), bins=30, edgecolor="black")
             ax.set_xlabel(x_column)
