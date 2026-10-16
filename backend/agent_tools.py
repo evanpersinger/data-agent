@@ -27,6 +27,45 @@ KAGGLE_DATA_DIR.mkdir(exist_ok=True)
 PLOTS_DIR.mkdir(exist_ok=True)
 
 
+DATA_DIRS = (RAW_DATA_DIR, CLEAN_DATA_DIR, KAGGLE_DATA_DIR)
+
+
+def _is_within(path: Path, parent: Path) -> bool:
+    try:
+        path.relative_to(parent)
+        return True
+    except ValueError:
+        return False
+
+
+def _resolve_data_path(filename: str, default_dir: Path = RAW_DATA_DIR) -> Path:
+    """Resolve a user/model supplied filename to a path inside a data directory.
+
+    A bare name is looked up in default_dir. A name containing a separator is
+    taken relative to the project root. Either way the resolved path (symlinks
+    and ".." included) must sit inside raw_data/, clean_data/ or kaggle_data/,
+    otherwise ValueError is raised. This keeps the agent away from .env,
+    kaggle.json, sessions.db and the source tree.
+    """
+    if "/" not in filename and "\\" not in filename:
+        candidate = default_dir / filename
+    else:
+        candidate = BASE_DIR / filename
+    resolved = candidate.resolve()
+    if not any(_is_within(resolved, d.resolve()) for d in DATA_DIRS):
+        raise ValueError(
+            f"Access denied: '{filename}' is outside raw_data/, clean_data/ and kaggle_data/."
+        )
+    return resolved
+
+
+def _safe_output_path(directory: Path, name: str) -> Path:
+    """Return directory/name, rejecting names that carry a path component."""
+    if not name or name != Path(name).name or name in (".", ".."):
+        raise ValueError(f"Invalid output filename '{name}': use a plain file name, no folders.")
+    return directory / name
+
+
 # list files in data directories
 def list_files(directory: str = "all") -> str:
     """
@@ -73,7 +112,11 @@ def list_files(directory: str = "all") -> str:
 
 # read content of a text file
 def read_file(filename: str) -> str:
-    file_path = BASE_DIR / filename
+    """Read a text file from raw_data/, clean_data/ or kaggle_data/."""
+    try:
+        file_path = _resolve_data_path(filename)
+    except ValueError as e:
+        return str(e)
     try:
         with open(file_path, 'r', encoding='utf-8') as f:
             return f.read()
@@ -85,11 +128,10 @@ def read_file(filename: str) -> str:
 def read_csv(filename: str) -> str:
     """Read a CSV file and return a summary of its structure and first few rows.
     If filename doesn't contain a path separator, looks in raw_data/ directory."""
-    # If filename is just a name (no path), look in raw_data/
-    if '/' not in filename and '\\' not in filename:
-        file_path = RAW_DATA_DIR / filename
-    else:
-        file_path = BASE_DIR / filename
+    try:
+        file_path = _resolve_data_path(filename)
+    except ValueError as e:
+        return str(e)
     try:
         df = pd.read_csv(file_path)
         summary = f"### Dataset Overview\n"
@@ -104,11 +146,10 @@ def read_csv(filename: str) -> str:
 def read_excel(filename: str, sheet_name: str = None) -> str:
     """Read an Excel file and return a summary of its structure.
     If filename doesn't contain a path separator, looks in raw_data/ directory."""
-    # If filename is just a name (no path), look in raw_data/
-    if '/' not in filename and '\\' not in filename:
-        file_path = RAW_DATA_DIR / filename
-    else:
-        file_path = BASE_DIR / filename
+    try:
+        file_path = _resolve_data_path(filename)
+    except ValueError as e:
+        return str(e)
     try:
         if sheet_name:
             df = pd.read_excel(file_path, sheet_name=sheet_name)
@@ -126,11 +167,10 @@ def read_excel(filename: str, sheet_name: str = None) -> str:
 def analyze_dataset(filename: str) -> str:
     """Analyze a dataset (CSV/Excel) and return statistics and insights.
     If filename doesn't contain a path separator, looks in raw_data/ directory."""
-    # If filename is just a name (no path), look in raw_data/
-    if '/' not in filename and '\\' not in filename:
-        file_path = RAW_DATA_DIR / filename
-    else:
-        file_path = BASE_DIR / filename
+    try:
+        file_path = _resolve_data_path(filename)
+    except ValueError as e:
+        return str(e)
     try:
         if filename.endswith('.csv'):
             df = pd.read_csv(file_path)
@@ -163,11 +203,10 @@ def clean_dataset(filename: str, remove_duplicates: bool = True, fill_missing: s
         fill_missing: How to handle missing values - "drop" (drop rows), "fill" (fill with mean/median), or "zero" (fill with 0)
         output_filename: Optional output filename. If not provided, saves as "cleaned_{original_filename}"
     """
-    # If filename is just a name (no path), look in raw_data/
-    if '/' not in filename and '\\' not in filename:
-        file_path = RAW_DATA_DIR / filename
-    else:
-        file_path = BASE_DIR / filename
+    try:
+        file_path = _resolve_data_path(filename)
+    except ValueError as e:
+        return str(e)
     try:
         # Read the file
         if filename.endswith('.csv'):
@@ -210,13 +249,14 @@ def clean_dataset(filename: str, remove_duplicates: bool = True, fill_missing: s
         
         # Determine output filename
         if output_filename is None:
-            if filename.endswith('.csv'):
-                output_filename = f"cleaned_{filename}"
+            original_name = Path(filename).name
+            if original_name.endswith('.csv'):
+                output_filename = f"cleaned_{original_name}"
             else:
-                output_filename = f"cleaned_{filename.rsplit('.', 1)[0]}.csv"
+                output_filename = f"cleaned_{original_name.rsplit('.', 1)[0]}.csv"
         
         # Save to clean_data/ directory
-        output_path = CLEAN_DATA_DIR / output_filename
+        output_path = _safe_output_path(CLEAN_DATA_DIR, output_filename)
         df.to_csv(output_path, index=False)
         
         result = f"Cleaned dataset saved to clean_data/{output_filename}\n"
@@ -238,11 +278,10 @@ def save_dataset(filename: str, output_filename: str, format: str = "csv") -> st
         output_filename: Name of the output file (will be saved in clean_data/)
         format: Output format - "csv" or "excel" (default: "csv")
     """
-    # If filename is just a name (no path), look in raw_data/
-    if '/' not in filename and '\\' not in filename:
-        file_path = RAW_DATA_DIR / filename
-    else:
-        file_path = BASE_DIR / filename
+    try:
+        file_path = _resolve_data_path(filename)
+    except ValueError as e:
+        return str(e)
     try:
         # Read the file
         if filename.endswith('.csv'):
@@ -253,7 +292,7 @@ def save_dataset(filename: str, output_filename: str, format: str = "csv") -> st
             return f"Unsupported input file type. Use CSV or Excel files."
         
         # Save to clean_data/ directory
-        output_path = CLEAN_DATA_DIR / output_filename
+        output_path = _safe_output_path(CLEAN_DATA_DIR, output_filename)
         
         if format == "csv":
             df.to_csv(output_path, index=False)
@@ -273,11 +312,10 @@ def interpret_data(filename: str) -> str:
     Provide detailed interpretation and insights about a dataset.
     If filename doesn't contain a path separator, looks in raw_data/ directory.
     """
-    # If filename is just a name (no path), look in raw_data/
-    if '/' not in filename and '\\' not in filename:
-        file_path = RAW_DATA_DIR / filename
-    else:
-        file_path = BASE_DIR / filename
+    try:
+        file_path = _resolve_data_path(filename)
+    except ValueError as e:
+        return str(e)
     try:
         # Read the file
         if filename.endswith('.csv'):
@@ -345,14 +383,10 @@ def organize_files(filename: str, target_folder: str = None) -> str:
     try:
         import shutil
         
-        # If filename is just a name (no path), look in BASE_DIR
-        if '/' not in filename and '\\' not in filename:
-            file_path = BASE_DIR / filename
-        else:
-            file_path = BASE_DIR / filename
+        file_path = _resolve_data_path(filename)
         
-        if not file_path.exists():
-            return f"File {file_path} not found."
+        if not file_path.is_file():
+            return f"File {filename} not found."
         
         # Determine target folder
         if target_folder is None:
@@ -367,15 +401,25 @@ def organize_files(filename: str, target_folder: str = None) -> str:
             else:
                 target_folder = "other_files"
         
-        # Create target folder if it doesn't exist
-        target_dir = BASE_DIR / target_folder
+        # The target must be a single folder name. It is created inside the data
+        # directory the file already lives in, so moved files stay reachable by the
+        # other tools and nothing can be dropped into the source tree.
+        if (target_folder != Path(target_folder).name or target_folder.startswith('.')
+                or target_folder in ('.', '..', '')):
+            return f"Invalid target folder '{target_folder}': use a plain folder name."
+        root = next(d.resolve() for d in DATA_DIRS if _is_within(file_path, d.resolve()))
+        target_dir = root / target_folder
         target_dir.mkdir(exist_ok=True)
         
         # Move file
         destination = target_dir / file_path.name
+        if destination.exists():
+            return f"Not moved: {target_folder}/{file_path.name} already exists."
         shutil.move(str(file_path), str(destination))
         
         return f"File {filename} moved to {target_folder}/{file_path.name}"
+    except ValueError as e:
+        return str(e)
     except Exception as e:
         return f"Could not organize file: {e}"
 
@@ -915,17 +959,19 @@ def plot_data(
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
 
-    # Resolve file path - search across all data directories
-    search_dirs = [RAW_DATA_DIR, CLEAN_DATA_DIR, KAGGLE_DATA_DIR, BASE_DIR]
+    # Resolve file path - bare names are searched across all data directories
     file_path = None
-    if "/" in filename or "\\" in filename:
-        file_path = BASE_DIR / filename
-    else:
-        for d in search_dirs:
-            candidate = d / filename
-            if candidate.exists():
-                file_path = candidate
-                break
+    try:
+        if "/" in filename or "\\" in filename:
+            file_path = _resolve_data_path(filename)
+        else:
+            for d in DATA_DIRS:
+                candidate = d / filename
+                if candidate.exists():
+                    file_path = _resolve_data_path(filename, default_dir=d)
+                    break
+    except ValueError as e:
+        return str(e)
 
     if file_path is None or not file_path.exists():
         return f"File '{filename}' not found. Checked raw_data/, clean_data/, kaggle_data/."
@@ -965,7 +1011,10 @@ def plot_data(
         safe_title = title.lower().replace(" ", "_").replace(":", "").replace("/", "_")[:50]
         output_filename = f"{safe_title}.png"
 
-    output_path = PLOTS_DIR / output_filename
+    try:
+        output_path = _safe_output_path(PLOTS_DIR, output_filename)
+    except ValueError as e:
+        return str(e)
 
     try:
         fig, ax = plt.subplots(figsize=(10, 6))
