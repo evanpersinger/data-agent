@@ -380,48 +380,68 @@ def organize_files(filename: str, target_folder: str = None) -> str:
         return f"Could not organize file: {e}"
 
 
+MAX_QUERY_ROWS = 200
+
+
+def _allow_db_writes() -> bool:
+    return os.getenv("ALLOW_DB_WRITES", "").strip().lower() in ("1", "true", "yes")
+
+
+def _strip_sql_comments(query: str) -> str:
+    import re
+    query = re.sub(r"/\*.*?\*/", " ", query, flags=re.DOTALL)
+    return re.sub(r"--[^\n]*", " ", query).strip()
+
+
 # execute database query
-def execute_query(query: str, database_url: str = None) -> str:
+def execute_query(query: str) -> str:
     """
-    Execute a SQL query against a database and return the results.
-    
+    Execute a single SQL statement against the database in DATABASE_URL.
+
+    Read-only by default: only SELECT / WITH queries run. Set ALLOW_DB_WRITES=true
+    in the environment to also allow INSERT, UPDATE, DELETE, etc.
+
     Args:
-        query: SQL query to execute (SELECT, INSERT, UPDATE, DELETE, etc.)
-        database_url: Database connection string. If not provided, uses DATABASE_URL from .env file.
-                     Examples:
-                     - SQLite: "sqlite:///database.db"
-                     - PostgreSQL: "postgresql://user:password@localhost/dbname"
-                     - MySQL: "mysql://user:password@localhost/dbname"
+        query: One SQL statement. Results are capped at 200 rows.
     """
+    database_url = os.getenv("DATABASE_URL")
+    if not database_url:
+        return "Error: DATABASE_URL is not set. Add it to the .env file."
+
+    cleaned = _strip_sql_comments(query).rstrip(";").strip()
+    if not cleaned:
+        return "Error: empty query."
+    if ";" in cleaned:
+        return "Error: only one SQL statement per call is allowed."
+
+    is_read = cleaned.split(None, 1)[0].upper() in ("SELECT", "WITH")
+    if not is_read and not _allow_db_writes():
+        return ("Error: write queries are disabled. Only SELECT/WITH queries are allowed "
+                "unless ALLOW_DB_WRITES=true is set.")
+
     try:
-        # Get database URL from parameter or environment variable
-        if database_url is None:
-            database_url = os.getenv("DATABASE_URL")
-            if database_url is None:
-                return "Error: No database URL provided. Set DATABASE_URL in .env file or pass it as a parameter."
-        
-        # Create database connection
         engine = create_engine(database_url)
-        
-        # Execute query
         with engine.connect() as connection:
-            # For SELECT queries, return results as a formatted table
-            if query.strip().upper().startswith('SELECT'):
-                df = pd.read_sql(text(query), connection)
+            if is_read:
+                if engine.dialect.name == "postgresql" and not _allow_db_writes():
+                    # Also blocks data-modifying CTEs ("WITH x AS (DELETE ...)").
+                    connection.execute(text("SET TRANSACTION READ ONLY"))
+                df = pd.read_sql(text(cleaned), connection)
                 if df.empty:
                     return "Query executed successfully. No rows returned."
-                
-                result_str = f"Query returned {len(df)} rows:\n\n"
-                result_str += df.to_string(index=False)
-                return result_str
-            else:
-                # For INSERT, UPDATE, DELETE, etc., execute and commit
-                result = connection.execute(text(query))
-                connection.commit()
-                return f"Query executed successfully. Rows affected: {result.rowcount if hasattr(result, 'rowcount') else 'N/A'}"
-                
+
+                result_str = f"Query returned {len(df)} rows"
+                if len(df) > MAX_QUERY_ROWS:
+                    result_str += f" (showing first {MAX_QUERY_ROWS})"
+                    df = df.head(MAX_QUERY_ROWS)
+                return result_str + ":\n\n" + df.to_string(index=False)
+
+            result = connection.execute(text(cleaned))
+            connection.commit()
+            return f"Query executed successfully. Rows affected: {result.rowcount}"
     except Exception as e:
-        return f"Database error: {str(e)}"
+        # Don't echo str(e): SQLAlchemy errors can embed the connection URL.
+        return f"Database error ({type(e).__name__}). Check the query and DATABASE_URL."
 
 
 # Resolve Kaggle credentials from the environment, falling back to kaggle.json in

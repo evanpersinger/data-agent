@@ -29,6 +29,7 @@ uv sync
 ```
 OPENAI_API_KEY=your_api_key_here
 DATABASE_URL=sqlite:///database.db  # Optional: for database operations
+ALLOW_DB_WRITES=false  # Optional: set true to let the agent run INSERT/UPDATE/DELETE
 KAGGLE_USERNAME=your_kaggle_username  # Optional: for Kaggle dataset downloads
 KAGGLE_KEY=your_kaggle_api_key  # Optional: for Kaggle dataset downloads
 ```
