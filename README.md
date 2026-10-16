@@ -110,7 +110,7 @@ Docker provides an isolated environment with pre-configured databases (PostgreSQ
 
 2. Update your `.env` file to use PostgreSQL (optional, SQLite still works):
 ```
-DATABASE_URL=postgresql://postgres:postgres@postgres:5432/data_agent
+DATABASE_URL=postgresql://postgres:<POSTGRES_PASSWORD>@postgres:5432/data_agent
 ```
 
 3. Start all services in detached mode (runs in background, doesn't require keeping a terminal open):

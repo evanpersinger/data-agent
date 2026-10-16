@@ -8,17 +8,18 @@ WORKDIR /app
 RUN pip install --no-cache-dir uv
 
 # Copy dependency files first (for better caching)
-COPY pyproject.toml uv.lock ./
+COPY pyproject.toml uv.lock README.md ./
+
+# Install third-party dependencies only, so code changes don't bust this layer
+RUN uv pip install --system -r pyproject.toml
 
 # Copy application code
 COPY . .
 
-# Install dependencies using uv
-# This installs the project and all its dependencies from pyproject.toml
-RUN uv pip install --system -e .
-
-# Create necessary directories
-RUN mkdir -p raw_data clean_data kaggle_data plots
+# Create necessary directories and run as an unprivileged user
+RUN mkdir -p raw_data clean_data kaggle_data plots \
+    && useradd --create-home app && chown -R app:app /app
+USER app
 
 # Set environment variables
 ENV PYTHONUNBUFFERED=1
