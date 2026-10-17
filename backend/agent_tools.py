@@ -27,6 +27,15 @@ KAGGLE_DATA_DIR.mkdir(exist_ok=True)
 PLOTS_DIR.mkdir(exist_ok=True)
 
 
+def _in_base(path: Path) -> Path:
+    """Resolve `path` and refuse it if it lands outside the project folder.
+    Stops an absolute path or `..` in a filename from reading or writing elsewhere."""
+    resolved = path.resolve()
+    if not resolved.is_relative_to(BASE_DIR.resolve()):
+        raise ValueError(f"{path} is outside the project folder")
+    return resolved
+
+
 # list files in data directories
 def list_files(directory: str = "all") -> str:
     """
@@ -73,7 +82,7 @@ def list_files(directory: str = "all") -> str:
 
 # read content of a text file
 def read_file(filename: str) -> str:
-    file_path = BASE_DIR / filename
+    file_path = _in_base(BASE_DIR / filename)
     try:
         with open(file_path, 'r', encoding='utf-8') as f:
             return f.read()
@@ -89,7 +98,7 @@ def read_csv(filename: str) -> str:
     if '/' not in filename and '\\' not in filename:
         file_path = RAW_DATA_DIR / filename
     else:
-        file_path = BASE_DIR / filename
+        file_path = _in_base(BASE_DIR / filename)
     try:
         df = pd.read_csv(file_path)
         summary = f"### Dataset Overview\n"
@@ -108,7 +117,7 @@ def read_excel(filename: str, sheet_name: str = None) -> str:
     if '/' not in filename and '\\' not in filename:
         file_path = RAW_DATA_DIR / filename
     else:
-        file_path = BASE_DIR / filename
+        file_path = _in_base(BASE_DIR / filename)
     try:
         if sheet_name:
             df = pd.read_excel(file_path, sheet_name=sheet_name)
@@ -130,7 +139,7 @@ def analyze_dataset(filename: str) -> str:
     if '/' not in filename and '\\' not in filename:
         file_path = RAW_DATA_DIR / filename
     else:
-        file_path = BASE_DIR / filename
+        file_path = _in_base(BASE_DIR / filename)
     try:
         if filename.endswith('.csv'):
             df = pd.read_csv(file_path)
@@ -167,7 +176,7 @@ def clean_dataset(filename: str, remove_duplicates: bool = True, fill_missing: s
     if '/' not in filename and '\\' not in filename:
         file_path = RAW_DATA_DIR / filename
     else:
-        file_path = BASE_DIR / filename
+        file_path = _in_base(BASE_DIR / filename)
     try:
         # Read the file
         if filename.endswith('.csv'):
@@ -216,7 +225,7 @@ def clean_dataset(filename: str, remove_duplicates: bool = True, fill_missing: s
                 output_filename = f"cleaned_{filename.rsplit('.', 1)[0]}.csv"
         
         # Save to clean_data/ directory
-        output_path = CLEAN_DATA_DIR / output_filename
+        output_path = _in_base(CLEAN_DATA_DIR / output_filename)
         df.to_csv(output_path, index=False)
         
         result = f"Cleaned dataset saved to clean_data/{output_filename}\n"
@@ -242,7 +251,7 @@ def save_dataset(filename: str, output_filename: str, format: str = "csv") -> st
     if '/' not in filename and '\\' not in filename:
         file_path = RAW_DATA_DIR / filename
     else:
-        file_path = BASE_DIR / filename
+        file_path = _in_base(BASE_DIR / filename)
     try:
         # Read the file
         if filename.endswith('.csv'):
@@ -253,7 +262,7 @@ def save_dataset(filename: str, output_filename: str, format: str = "csv") -> st
             return f"Unsupported input file type. Use CSV or Excel files."
         
         # Save to clean_data/ directory
-        output_path = CLEAN_DATA_DIR / output_filename
+        output_path = _in_base(CLEAN_DATA_DIR / output_filename)
         
         if format == "csv":
             df.to_csv(output_path, index=False)
@@ -277,7 +286,7 @@ def interpret_data(filename: str) -> str:
     if '/' not in filename and '\\' not in filename:
         file_path = RAW_DATA_DIR / filename
     else:
-        file_path = BASE_DIR / filename
+        file_path = _in_base(BASE_DIR / filename)
     try:
         # Read the file
         if filename.endswith('.csv'):
@@ -347,9 +356,9 @@ def organize_files(filename: str, target_folder: str = None) -> str:
         
         # If filename is just a name (no path), look in BASE_DIR
         if '/' not in filename and '\\' not in filename:
-            file_path = BASE_DIR / filename
+            file_path = _in_base(BASE_DIR / filename)
         else:
-            file_path = BASE_DIR / filename
+            file_path = _in_base(BASE_DIR / filename)
         
         if not file_path.exists():
             return f"File {file_path} not found."
@@ -368,7 +377,7 @@ def organize_files(filename: str, target_folder: str = None) -> str:
                 target_folder = "other_files"
         
         # Create target folder if it doesn't exist
-        target_dir = BASE_DIR / target_folder
+        target_dir = _in_base(BASE_DIR / target_folder)
         target_dir.mkdir(exist_ok=True)
         
         # Move file
@@ -919,7 +928,7 @@ def plot_data(
     search_dirs = [RAW_DATA_DIR, CLEAN_DATA_DIR, KAGGLE_DATA_DIR, BASE_DIR]
     file_path = None
     if "/" in filename or "\\" in filename:
-        file_path = BASE_DIR / filename
+        file_path = _in_base(BASE_DIR / filename)
     else:
         for d in search_dirs:
             candidate = d / filename
