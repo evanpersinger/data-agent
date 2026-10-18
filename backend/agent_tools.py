@@ -558,7 +558,7 @@ def search_kaggle_datasets(search_term: str, max_results: int = 5) -> str:
 
 
 # download dataset from Kaggle
-def download_kaggle_dataset(dataset: str, unzip: bool = True) -> str:
+def download_kaggle_dataset(dataset: str) -> str:
     """
     MANDATORY: Use this function whenever the user asks to download a dataset from Kaggle.
     This function automatically searches Kaggle and downloads the best matching dataset.
@@ -571,7 +571,7 @@ def download_kaggle_dataset(dataset: str, unzip: bool = True) -> str:
         dataset: Dataset name or identifier. Can be:
                  - Just a name (e.g., "titanic", "Clash Royal Cards data") - function will search and find best match
                  - Full identifier in format "username/dataset-name" (e.g., "heptapod/titanic") - downloads directly
-        unzip: Whether to automatically unzip downloaded files (default: True, always unzipped with kagglehub)
+        Downloaded files are always unzipped.
     
     Returns:
         A message indicating success and where files were saved, or an error message if dataset not found.
