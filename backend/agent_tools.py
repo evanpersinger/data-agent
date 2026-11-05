@@ -952,7 +952,6 @@ def plot_data(
         return f"Unsupported chart type '{chart_type}'. Choose from: {', '.join(supported)}"
 
     # Auto-generate title and output filename
-    base_name = file_path.stem
     if title is None:
         if chart_type == "histogram":
             title = f"Histogram of {x_column}"
